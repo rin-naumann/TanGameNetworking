@@ -17,6 +17,8 @@ GameObject:
   - component: {fileID: 1279567273545806404}
   - component: {fileID: 6553706188955402913}
   - component: {fileID: 2062553500281339608}
+  - component: {fileID: 7998532715371166483}
+  - component: {fileID: 7359459366262188187}
   m_Layer: 0
   m_Name: NetworkPlayer
   m_TagString: Player
@@ -156,7 +158,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 2686412357
+  GlobalObjectIdHash: 1371080776
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -244,3 +246,35 @@ MonoBehaviour:
   moveSpeed: 5
   gravity: -9.81
   groundedGravity: -2
+--- !u!114 &7998532715371166483
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5868275366582418339}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dfac5b0618eff7245a7d8c906bf57e0e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LocalPlayerCameraTarget
+  ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &7359459366262188187
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5868275366582418339}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c4020c49ccf3d243a01e362ee007756, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerColorManager
+  ShowTopMostFoldoutHeaderGroup: 1
+  playerRenderer: {fileID: 1558319768928118615}
+  playerMaterials:
+  - {fileID: 2100000, guid: ca2ce2b6e435a0d40bd5fc27329415d4, type: 2}
+  - {fileID: 2100000, guid: 5ac208ad982263d46be03c58e464492c, type: 2}
+  - {fileID: 2100000, guid: 80689e3fd559bbf4e9ffd9289887570c, type: 2}
+  - {fileID: 2100000, guid: 11bf5e171c7046b43b7131744a917d46, type: 2}
