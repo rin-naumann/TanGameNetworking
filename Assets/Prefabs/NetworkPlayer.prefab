@@ -14,12 +14,14 @@ GameObject:
   - component: {fileID: 726968801914348297}
   - component: {fileID: 485319215146526132}
   - component: {fileID: 5346319085240206652}
+  - component: {fileID: 5233069176160233323}
   - component: {fileID: 1279567273545806404}
   - component: {fileID: 6553706188955402913}
   - component: {fileID: 2062553500281339608}
+  - component: {fileID: 1297977772358485758}
   - component: {fileID: 7998532715371166483}
   - component: {fileID: 7359459366262188187}
-  m_Layer: 0
+  m_Layer: 3
   m_Name: NetworkPlayer
   m_TagString: Player
   m_Icon: {fileID: 0}
@@ -171,6 +173,25 @@ MonoBehaviour:
   AutoObjectParentSync: 1
   SyncOwnerTransformWhenParented: 1
   AllowOwnerToParent: 0
+--- !u!114 &5233069176160233323
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5868275366582418339}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a87f5f1108c78944b3e52e859447bde, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NetworkPlayerHealth
+  ShowTopMostFoldoutHeaderGroup: 1
+  maxHealth: 100
+  currentHealth:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 100
 --- !u!114 &1279567273545806404
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -246,6 +267,25 @@ MonoBehaviour:
   moveSpeed: 5
   gravity: -9.81
   groundedGravity: -2
+--- !u!114 &1297977772358485758
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5868275366582418339}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0a556a0a9885edd4884b0e0599fd2518, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NetworkPlayerAttack
+  ShowTopMostFoldoutHeaderGroup: 1
+  attackRange: 3
+  attackDamage: 25
+  playerLayer:
+    serializedVersion: 2
+    m_Bits: 8
+  attackKey: 32
 --- !u!114 &7998532715371166483
 MonoBehaviour:
   m_ObjectHideFlags: 0
