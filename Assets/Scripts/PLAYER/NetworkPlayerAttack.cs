@@ -4,9 +4,9 @@ using Unity.Netcode;
 public class NetworkPlayerAttack : NetworkBehaviour
 {
     [SerializeField] float attackRange = 3f;
-    [SerializeField] int attackDamage = 25;
+    [SerializeField] int attackDamage = 67;
     [SerializeField] LayerMask playerLayer;
-    [SerializeField] KeyCode attackKey = KeyCode.Space;
+    [SerializeField] KeyCode attackKey = KeyCode.Mouse0;
 
     private void Update()
     {
