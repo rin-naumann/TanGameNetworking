@@ -21,6 +21,7 @@ GameObject:
   - component: {fileID: 1297977772358485758}
   - component: {fileID: 7998532715371166483}
   - component: {fileID: 7359459366262188187}
+  - component: {fileID: 1765128656525873455}
   m_Layer: 3
   m_Name: NetworkPlayer
   m_TagString: Player
@@ -40,7 +41,8 @@ Transform:
   m_LocalPosition: {x: 0.35355, y: 0.24749, z: 0.35355}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 5771988634407242913}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!33 &989335441981615520
@@ -322,3 +324,51 @@ MonoBehaviour:
   - {fileID: 2100000, guid: 5ac208ad982263d46be03c58e464492c, type: 2}
   - {fileID: 2100000, guid: 80689e3fd559bbf4e9ffd9289887570c, type: 2}
   - {fileID: 2100000, guid: 11bf5e171c7046b43b7131744a917d46, type: 2}
+--- !u!114 &1765128656525873455
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5868275366582418339}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8763053f6f1565747aa1b8817c86d311, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NetworkPlayerShooter
+  ShowTopMostFoldoutHeaderGroup: 1
+  bulletPrefab: {fileID: 4349789693307796690, guid: cc50d754f4a3a7e41827bcfe1a4893f2, type: 3}
+  firePoint: {fileID: 5771988634407242913}
+  fireRate: 0.25
+  keyCode: 324
+--- !u!1 &6002929226677591855
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5771988634407242913}
+  m_Layer: 3
+  m_Name: firePoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5771988634407242913
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6002929226677591855}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 1}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 3491239302156996430}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
