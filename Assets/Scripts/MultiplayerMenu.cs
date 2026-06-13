@@ -15,6 +15,8 @@ public class MultiplayerMenu : NetworkBehaviour
     [SerializeField] private TMP_InputField joinCodeInput;
     [SerializeField] private TMP_Text joinCodeText;
     [SerializeField] private TMP_Text statusText;
+    //player counter
+    [SerializeField] public TMP_Text PlayerCountText;
 
     [Header("Relay Settings")]
     [SerializeField] private int maxConnections = 4;
@@ -24,6 +26,17 @@ public class MultiplayerMenu : NetworkBehaviour
     private async void Start()
     {
         await InitializeUnityServices();
+    }
+
+    void Update()
+    {
+        // Find all objects with the "Player" tag every frame
+        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
+
+        int playerCount = players.Length;
+
+        // Update TMP text
+        PlayerCountText.text = "Players: " + playerCount;
     }
 
     private async System.Threading.Tasks.Task InitializeUnityServices()
