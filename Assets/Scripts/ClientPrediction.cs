@@ -1,12 +1,11 @@
 using UnityEngine;
 using Unity.Netcode;
-using Unity.Netcode.Components;
 
 public class ClientPrediction : NetworkBehaviour
 {
     [Header("Settings")]
-    [SerializeField] private float correctionThreshold = 0.5f;
-    [SerializeField] private float snapThreshold = 3f;
+    [SerializeField] private float correctionThreshold = 2f;
+    [SerializeField] private float snapThreshold = 8f;
     [SerializeField] private float smoothCorrectionSpeed = 10f;
 
     private CharacterController _cc;
@@ -17,8 +16,6 @@ public class ClientPrediction : NetworkBehaviour
         Vector3.zero,
         NetworkVariableReadPermission.Everyone,
         NetworkVariableWritePermission.Server);
-
-    private bool _hasServerPosition = false;
 
     public override void OnNetworkSpawn()
     {
@@ -48,7 +45,6 @@ public class ClientPrediction : NetworkBehaviour
     {
         // Only the owner needs to reconcile.
         if (!IsOwner) return;
-        _hasServerPosition = true;
         ReconcilePosition(current);
     }
 

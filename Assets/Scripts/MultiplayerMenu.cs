@@ -2,41 +2,41 @@ using System;
 using TMPro;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
-using Unity.Services.Authentication;
 using Unity.Services.Core;
+using Unity.Services.Authentication;
 using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using UnityEngine;
 
-public class MultiplayerMenu : NetworkBehaviour
+public class MultiplayerMenu : MonoBehaviour
 {
     [Header("UI References")]
     [SerializeField] private GameObject menuUI;
     [SerializeField] private TMP_InputField joinCodeInput;
-    [SerializeField] private TMP_Text joinCodeText;
     [SerializeField] private TMP_Text statusText;
-    //player counter
-    [SerializeField] public TMP_Text PlayerCountText;
 
     [Header("Relay Settings")]
-    [SerializeField] private int maxConnections = 4;
+    [SerializeField] private int maxConnections = 2; // Fixed connection allocation slot limit
 
     private const string WebGLConnectionType = "wss";
 
     private async void Start()
     {
         await InitializeUnityServices();
+        
+        // Listen for connection events to safely swap menus ONLY after successful handshake
+        if (NetworkManager.Singleton != null)
+        {
+            NetworkManager.Singleton.OnClientConnectedCallback += HandleLocalClientConnected;
+        }
     }
 
-    void Update()
+    private void OnDestroy()
     {
-        // Find all objects with the "Player" tag every frame
-        GameObject[] players = GameObject.FindGameObjectsWithTag("Player");
-
-        int playerCount = players.Length;
-
-        // Update TMP text
-        PlayerCountText.text = "Players: " + playerCount;
+        if (NetworkManager.Singleton != null)
+        {
+            NetworkManager.Singleton.OnClientConnectedCallback -= HandleLocalClientConnected;
+        }
     }
 
     private async System.Threading.Tasks.Task InitializeUnityServices()
@@ -44,14 +44,10 @@ public class MultiplayerMenu : NetworkBehaviour
         try
         {
             if (UnityServices.State == ServicesInitializationState.Uninitialized)
-            {
                 await UnityServices.InitializeAsync();
-            }
 
             if (!AuthenticationService.Instance.IsSignedIn)
-            {
                 await AuthenticationService.Instance.SignInAnonymouslyAsync();
-            }
 
             SetStatus("Unity Services ready.");
         }
@@ -67,41 +63,34 @@ public class MultiplayerMenu : NetworkBehaviour
         try
         {
             SetStatus("Creating host session...");
-
-            await InitializeUnityServices();
-
             Allocation allocation = await RelayService.Instance.CreateAllocationAsync(maxConnections);
-
             string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
 
             UnityTransport transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-
             transport.UseWebSockets = true;
-
-            transport.SetRelayServerData(
-                AllocationUtils.ToRelayServerData(allocation, WebGLConnectionType)
-            );
+            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, WebGLConnectionType));
 
             bool started = NetworkManager.Singleton.StartHost();
 
             if (started)
             {
-                if (joinCodeText != null)
+                SetStatus("Host started successfully.");
+                LobbyManager lobby = FindFirstObjectByType<LobbyManager>();
+                if (lobby != null)
                 {
-                    joinCodeText.text = "Join Code: " + joinCode;
+                    lobby.SetJoinCode(joinCode);
+                    lobby.ShowLobbyUI();
                 }
-
-                SetStatus("Host started. Join Code: " + joinCode);
                 HideMenu();
             }
             else
             {
-                SetStatus("Failed to start Host.");
+                SetStatus("Failed to start Host initialization.");
             }
         }
         catch (Exception exception)
         {
-            SetStatus("Host failed. Check Console.");
+            SetStatus("Host creation failed.");
             Debug.LogError(exception);
         }
     }
@@ -110,74 +99,56 @@ public class MultiplayerMenu : NetworkBehaviour
     {
         try
         {
-            SetStatus("Joining session...");
-
-            await InitializeUnityServices();
-
-            if (joinCodeInput == null)
-            {
-                SetStatus("Join Code Input is missing.");
-                return;
-            }
-
-            string joinCode = joinCodeInput.text.Trim().ToUpper();
-
+            string joinCode = joinCodeInput.text.Trim();
             if (string.IsNullOrEmpty(joinCode))
             {
-                SetStatus("Please enter a join code.");
+                SetStatus("Please enter a valid Join Code.");
                 return;
             }
 
+            SetStatus("Connecting to Relay session...");
             JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
 
             UnityTransport transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
-
             transport.UseWebSockets = true;
+            transport.SetRelayServerData(AllocationUtils.ToRelayServerData(joinAllocation, WebGLConnectionType));
 
-            transport.SetRelayServerData(
-                AllocationUtils.ToRelayServerData(joinAllocation, WebGLConnectionType)
-            );
-
-            bool started = NetworkManager.Singleton.StartClient();
-
-            if (started)
-            {
-                SetStatus("Client started.");
-                HideMenu();
-            }
-            else
-            {
-                SetStatus("Failed to start Client.");
-            }
+            // StartClient handles connection asynchronously over the web. Do not change UI here!
+            NetworkManager.Singleton.StartClient();
+            SetStatus("Connecting to host...");
         }
         catch (Exception exception)
         {
-            SetStatus("Client failed. Check join code and Console.");
+            SetStatus("Client connection failed. Verification error.");
             Debug.LogError(exception);
         }
     }
 
-    public void StartServer()
+    private void HandleLocalClientConnected(ulong clientId)
     {
-        SetStatus("Dedicated Server is not recommended for Unity Play WebGL.");
-        Debug.LogWarning("StartServer is disabled for Unity Play WebGL. Use StartHost or StartClient instead.");
+        // Fires on the joining machine when its individual connection handshake succeeds
+        if (NetworkManager.Singleton.IsServer) return; // Host handles UI inside StartHost directly
+
+        if (clientId == NetworkManager.Singleton.LocalClientId)
+        {
+            SetStatus("Connection Confirmed!");
+            LobbyManager lobby = FindFirstObjectByType<LobbyManager>();
+            if (lobby != null)
+            {
+                lobby.ShowLobbyUI();
+            }
+            HideMenu();
+        }
     }
 
     private void HideMenu()
     {
-        if (menuUI != null)
-        {
-            menuUI.SetActive(false);
-        }
+        if (menuUI != null) menuUI.SetActive(false);
     }
 
     private void SetStatus(string message)
     {
         Debug.Log(message);
-
-        if (statusText != null)
-        {
-            statusText.text = message;
-        }
+        if (statusText != null) statusText.text = message;
     }
 }

@@ -3,161 +3,192 @@ using UnityEngine;
 
 public class CombatController : NetworkBehaviour
 {
-    [Header("Scope")]
-    [SerializeField] private float normalFOV = 90f;
-    [SerializeField] private float scopedFOV = 9f;
-    [SerializeField] private float scopeLerpSpeed = 10f;
-    [SerializeField] private GameObject scopeUI;
-
-    [Header("Weapon Stats & Recoil")]
+    [Header("Weapon")]
     [SerializeField] private int maxAmmo = 10;
     [SerializeField] private float fireRate = 3f;
     [SerializeField] private float recoilIntensity = 30f;
-    [SerializeField] private float reloadDuration = 2.0f;
+    [SerializeField] private float reloadDuration = 3f;
 
     [Header("Respawn")]
     [SerializeField] private string spawnPointTag = "SpawnPoint";
-    private CharacterController cc;
-    private InputManager input;
-    private CameraController cameraController;
-    private bool isScoped;
-    private float fireCooldown;
-    // Ammo state
-    private int currentAmmo;
-    private bool isReloading;
-    private float reloadTimer;
-    private bool _combatLocked = true;
-    public bool IsScoped => isScoped;
+
+    private CharacterController _cc;
+    private InputManager _input;
+    private CameraController _camera;
+    private GameManager _gameManager;
+    private SoundManager _sound;
+
+    private bool _isScoped;
+    private float _fireCooldown;
+    private int _currentAmmo;
+    private bool _isReloading;
+    private float _reloadTimer;
+
+    public bool IsScoped    => _isScoped;
+    public bool IsReloading => _isReloading;
+    public int  CurrentAmmo => _currentAmmo;
+    public int  MaxAmmo     => maxAmmo;
 
     public override void OnNetworkSpawn()
     {
-        if (!IsOwner) enabled = false;
+        _currentAmmo = maxAmmo;
+        enabled = false; // add this
+    }
+
+    public void ActivatePlayer()
+    {
+        if (!IsOwner) return;
+        enabled = true;
     }
 
     private void Awake()
     {
-        cc = GetComponent<CharacterController>();
-        input = GetComponent<InputManager>();
-        cameraController = Camera.main.GetComponent<CameraController>();
+        _cc          = GetComponent<CharacterController>();
+        _input       = GetComponent<InputManager>();
+        _camera      = Camera.main.GetComponent<CameraController>();
+        _gameManager = FindFirstObjectByType<GameManager>();
+        _sound       = SoundManager.Instance;
     }
 
     private void Update()
     {
         if (!IsOwner) return;
 
-        if (fireCooldown > 0f)
-            fireCooldown -= Time.deltaTime;
+        if (_fireCooldown > 0f) _fireCooldown -= Time.deltaTime;
+
+        if (_isReloading)
+        {
+            HandleReload();
+            return;
+        }
 
         HandleScope();
         HandleShoot();
+        HandleManualReload();
     }
 
+    // Toggles scope while right mouse is held. Tells CameraController to set scoped FOV.
     private void HandleScope()
     {
-        if (Input.GetKey(input.ScopeKey)) isScoped = true;
-        else isScoped = false;
+        bool wasScoped = _isScoped;
+        _isScoped = Input.GetKey(_input.ScopeKey);
 
-        if (scopeUI != null) scopeUI.SetActive(isScoped);
-
-        float targetFOV = isScoped ? scopedFOV : normalFOV;
-        Camera.main.fieldOfView = Mathf.Lerp(Camera.main.fieldOfView, targetFOV, scopeLerpSpeed * Time.deltaTime);
+        if (_isScoped != wasScoped)
+            _camera?.SetScoped(_isScoped);
     }
 
+    // Fires hitscan shot. Decrements ammo, applies recoil, sends kill RPC if target hit.
     private void HandleShoot()
     {
-        if (_combatLocked) return;
-        if (!Input.GetKeyDown(input.FireKey)) return;
-        if (fireCooldown > 0f) return;
+        if (!Input.GetKeyDown(_input.FireKey)) return;
+        if (_fireCooldown > 0f)
+        {
+            Debug.Log("Fire on cooldown: " + _fireCooldown);
+            return;
+        }
 
-        // Auto reload if pulling trigger empty
-        if (currentAmmo <= 0)
+        if (_currentAmmo <= 0)
         {
             StartReload();
             return;
         }
 
-        fireCooldown = fireRate;
-        currentAmmo--;
+        _fireCooldown = fireRate;
+        _currentAmmo--;
 
-        isScoped = false;
-        if (scopeUI != null) scopeUI.SetActive(false);
-        Camera.main.fieldOfView = normalFOV;
+        _camera?.SetScoped(false);
+        _camera?.ApplyRecoil(recoilIntensity);
+        _sound?.PlayShoot();
+        _isScoped = false;
 
-        // 2. RECOIL APPLICATION
-        if (cameraController != null)
+        Ray ray = Camera.main.ScreenPointToRay(new Vector3(Screen.width / 2f, Screen.height / 2f));
+        Debug.Log("Firing ray from: " + ray.origin + " direction: " + ray.direction);
+
+        if (!Physics.Raycast(ray, out RaycastHit hit))
         {
-            cameraController.ApplyRecoil(recoilIntensity);
+            Debug.Log("Ray hit nothing");
+            return;
         }
 
-        // Raycast logic
-        Ray ray = Camera.main.ScreenPointToRay(new Vector3(Screen.width / 2f, Screen.height / 2f));
-        if (!Physics.Raycast(ray, out RaycastHit hit)) return;
+        Debug.Log("Ray hit: " + hit.collider.gameObject.name);
 
-        NetworkObject netObj = hit.collider.GetComponent<NetworkObject>();
-        if (netObj == null || netObj.IsOwner) return;
+        NetworkObject netObj = hit.collider.GetComponentInParent<NetworkObject>();
+        if (netObj == null)
+        {
+            Debug.Log("No NetworkObject on hit object");
+            return;
+        }
+        if (netObj.IsOwner)
+        {
+            Debug.Log("Hit own NetworkObject");
+            return;
+        }
 
+        Debug.Log("Sending ShootServerRpc for: " + netObj.NetworkObjectId);
         ShootServerRpc(netObj.NetworkObjectId);
     }
 
-    private void StartReload()
+    // Allows manual reload with R key if not full and not already reloading.
+    private void HandleManualReload()
     {
-        isReloading = true;
-        reloadTimer = reloadDuration;
-        
-        // Force unscope during reload sequence
-        isScoped = false;
-        if (scopeUI != null) scopeUI.SetActive(false);
+        if (!Input.GetKeyDown(_input.ReloadKey)) return;
+        if (_currentAmmo == maxAmmo) return;
+        StartReload();
     }
 
+    // Begins the reload sequence. Forces unscope.
+    private void StartReload()
+    {
+        if (_isReloading) return;
+        _isReloading = true;
+        _reloadTimer = reloadDuration;
+        _isScoped    = false;
+        _camera?.SetScoped(false);
+        _sound?.PlayReload();
+    }
+
+    // Ticks the reload timer. Refills ammo when complete.
     private void HandleReload()
     {
-        reloadTimer -= Time.deltaTime;
-        if (reloadTimer <= 0f)
+        _reloadTimer -= Time.deltaTime;
+        if (_reloadTimer <= 0f)
         {
-            currentAmmo = maxAmmo;
-            isReloading = false;
+            _currentAmmo = maxAmmo;
+            _isReloading = false;
         }
     }
 
+    // Sent to server when a hit is detected on the client. Server validates and triggers respawn.
     [ServerRpc]
     private void ShootServerRpc(ulong targetNetworkObjectId)
     {
-        Debug.Log($"ShootServerRpc called, target ID: {targetNetworkObjectId}");
-        if (!NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(targetNetworkObjectId, out NetworkObject target))
-            return;
+        if (!NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(
+            targetNetworkObjectId, out NetworkObject target)) return;
 
         CombatController targetCombat = target.GetComponent<CombatController>();
-        if (targetCombat != null)
-            targetCombat.RespawnClientRpc();
+        if (targetCombat == null) return;
+
+        targetCombat.RespawnClientRpc();
+        _gameManager?.RegisterKill(OwnerClientId);
     }
 
+    // Fires on all clients but only executes on the victim's machine.
     [ClientRpc]
     private void RespawnClientRpc()
     {
-        // Only the actual owner of this object should respawn.
         if (!IsOwner) return;
 
         GameObject[] spawnPoints = GameObject.FindGameObjectsWithTag(spawnPointTag);
-        if (spawnPoints.Length == 0)
-        {
-            Debug.LogWarning("No spawn points found with tag: " + spawnPointTag);
-            return;
-        }
+        if (spawnPoints.Length == 0) return;
 
-        Transform spawnPoint = spawnPoints[Random.Range(0, spawnPoints.Length)].transform;
+        Transform spawn = spawnPoints[Random.Range(0, spawnPoints.Length)].transform;
+        _cc.enabled = false;
+        transform.position = spawn.position;
+        _cc.enabled = true;
 
-        // CharacterController must be disabled to teleport, otherwise it fights the position change.
-        cc.enabled = false;
-        transform.position = spawnPoint.position;
-        cc.enabled = true;
-
-        // Unscope on death.
-        isScoped = false;
-        if (scopeUI != null) scopeUI.SetActive(false);
-    }
-
-    public void UnlockCombat()
-    {
-        _combatLocked = false;
+        _isScoped    = false;
+        _isReloading = false;
+        _currentAmmo = maxAmmo;
+        _camera?.SetScoped(false);
     }
 }

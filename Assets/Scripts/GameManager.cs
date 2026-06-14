@@ -1,25 +1,14 @@
 using System.Collections;
-using TMPro;
 using Unity.Netcode;
 using UnityEngine;
 
 public class GameManager : NetworkBehaviour
 {
-    [Header("UI References")]
-    [SerializeField] private TMP_Text timerText;
-    [SerializeField] private TMP_Text localScoreText;
-    [SerializeField] private TMP_Text enemyScoreText;
-    [SerializeField] private TMP_Text killFeedText;
-    [SerializeField] private TMP_Text winOverlayText;
-    [SerializeField] private GameObject winOverlay;
-    [SerializeField] private RectTransform enemyIndicator;
-
     [Header("Settings")]
     [SerializeField] private float matchDuration = 300f;
     [SerializeField] private float killFeedDuration = 3f;
     [SerializeField] private float indicatorEdgePadding = 40f;
 
-    // Networked state
     private NetworkVariable<float> _timeRemaining = new NetworkVariable<float>(
         300f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private NetworkVariable<int> _p1Score = new NetworkVariable<int>(
@@ -31,11 +20,19 @@ public class GameManager : NetworkBehaviour
     private NetworkVariable<bool> _isMatchOver = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+    private HUDController _hud;
+    private LobbyManager _lobby;
     private Transform _enemyTransform;
     private Coroutine _killFeedCoroutine;
     private bool _isActive = false;
 
-    public void Activate() => _isActive = true;
+    // Called by LobbyManager once countdown ends.
+    public void Activate()
+    {
+        _isActive = true;
+        _hud   = FindFirstObjectByType<HUDController>();
+        _lobby = FindFirstObjectByType<LobbyManager>();
+    }
 
     public override void OnNetworkSpawn()
     {
@@ -46,45 +43,38 @@ public class GameManager : NetworkBehaviour
         _p1Score.OnValueChanged       += OnScoreChanged;
         _p2Score.OnValueChanged       += OnScoreChanged;
         _isSuddenDeath.OnValueChanged += OnSuddenDeathChanged;
-        _isMatchOver.OnValueChanged   += OnMatchOverChanged;
-
-        if (winOverlay != null) winOverlay.SetActive(false);
-        if (enemyIndicator != null) enemyIndicator.gameObject.SetActive(false);
     }
 
     private void Update()
     {
-        if (IsServer && !_isMatchOver.Value && _isActive) TickTimer();
+        if (IsServer && _isActive && !_isMatchOver.Value)
+            TickTimer();
 
-        UpdateEnemyIndicator();
-        UpdateScoreUI();
+        if (_isActive && _isSuddenDeath.Value)
+            UpdateEnemyIndicator();
     }
 
+    // Ticks the server timer. Triggers sudden death or match end at zero.
     private void TickTimer()
     {
         if (_timeRemaining.Value <= 0f)
         {
             _timeRemaining.Value = 0f;
-
             if (_p1Score.Value == _p2Score.Value)
                 _isSuddenDeath.Value = true;
             else
                 EndMatch();
-
             return;
         }
-
         _timeRemaining.Value -= Time.deltaTime;
     }
 
     private void OnTimerChanged(float prev, float current)
     {
-        if (timerText == null) return;
-        int minutes = Mathf.FloorToInt(current / 60f);
-        int seconds = Mathf.FloorToInt(current % 60f);
-        timerText.text = string.Format("{0:00}:{1:00}", minutes, seconds);
+        if (_hud != null) _hud.UpdateTimer(current);
     }
 
+    // Called by CombatController on the server when a kill is confirmed.
     public void RegisterKill(ulong killerClientId)
     {
         if (!IsServer) return;
@@ -100,6 +90,7 @@ public class GameManager : NetworkBehaviour
             EndMatch();
     }
 
+    // Determines winner and ends the match.
     private void EndMatch()
     {
         _isMatchOver.Value = true;
@@ -110,70 +101,59 @@ public class GameManager : NetworkBehaviour
         else if (_p2Score.Value > _p1Score.Value)
             winnerId = NetworkManager.Singleton.ConnectedClientsIds[1];
         else
-            winnerId = ulong.MaxValue; // draw, shouldn't happen in sudden death
+            winnerId = ulong.MaxValue;
 
         ShowWinnerClientRpc(winnerId);
     }
 
     private void OnScoreChanged(int prev, int current)
     {
-        UpdateScoreUI();
-    }
-
-    private void UpdateScoreUI()
-    {
-        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening) return;
+        if (!NetworkManager.Singleton.IsListening) return;
+        if (_hud == null) _hud = FindFirstObjectByType<HUDController>();
+        if (_hud == null) return;
 
         ulong localId = NetworkManager.Singleton.LocalClientId;
         bool isP1 = localId == NetworkManager.Singleton.ConnectedClientsIds[0];
 
-        if (localScoreText != null)
-            localScoreText.text = "You: " + (isP1 ? _p1Score.Value : _p2Score.Value);
-        if (enemyScoreText != null)
-            enemyScoreText.text = "Enemy: " + (isP1 ? _p2Score.Value : _p1Score.Value);
+        _hud.UpdateScores(
+            isP1 ? _p1Score.Value : _p2Score.Value,
+            isP1 ? _p2Score.Value : _p1Score.Value);
     }
 
     [ClientRpc]
     private void NotifyKillClientRpc(ulong killerClientId)
     {
+        if (_hud == null) _hud = FindFirstObjectByType<HUDController>();
         bool localKill = killerClientId == NetworkManager.Singleton.LocalClientId;
-        string message = localKill ? "You got a kill!" : "Enemy got a kill!";
 
-        if (_killFeedCoroutine != null)
-            StopCoroutine(_killFeedCoroutine);
-
-        _killFeedCoroutine = StartCoroutine(ShowKillFeed(message));
+        if (_killFeedCoroutine != null) StopCoroutine(_killFeedCoroutine);
+        _killFeedCoroutine = StartCoroutine(
+            KillFeedRoutine(localKill ? "You got a kill!" : "Enemy got a kill!"));
     }
 
-    private IEnumerator ShowKillFeed(string message)
+    private IEnumerator KillFeedRoutine(string message)
     {
-        if (killFeedText == null) yield break;
-        killFeedText.text = message;
-        killFeedText.gameObject.SetActive(true);
+        if (_hud == null) yield break;
+        _hud.ShowKillFeed(message);
         yield return new WaitForSeconds(killFeedDuration);
-        killFeedText.gameObject.SetActive(false);
+        _hud.HideKillFeed();
     }
 
     private void OnSuddenDeathChanged(bool prev, bool current)
     {
         if (!current) return;
+        if (_hud == null) _hud = FindFirstObjectByType<HUDController>();
 
-        // Show kill feed message for sudden death.
-        if (_killFeedCoroutine != null)
-            StopCoroutine(_killFeedCoroutine);
-        _killFeedCoroutine = StartCoroutine(ShowKillFeed("Sudden Death! Next kill wins!"));
+        if (_killFeedCoroutine != null) StopCoroutine(_killFeedCoroutine);
+        _killFeedCoroutine = StartCoroutine(KillFeedRoutine("Sudden Death! Next kill wins!"));
 
-        // Enable enemy indicator.
-        if (enemyIndicator != null)
-            enemyIndicator.gameObject.SetActive(true);
-
+        _hud.ShowEnemyIndicator();
         FindEnemyTransform();
     }
 
     private void FindEnemyTransform()
     {
         ulong localId = NetworkManager.Singleton.LocalClientId;
-
         foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
         {
             if (client.ClientId == localId) continue;
@@ -187,55 +167,50 @@ public class GameManager : NetworkBehaviour
 
     private void UpdateEnemyIndicator()
     {
-        if (!_isSuddenDeath.Value) return;
-        if (enemyIndicator == null || _enemyTransform == null) return;
-        if (Camera.main == null) return;
+        if (_hud == null || _enemyTransform == null || Camera.main == null) return;
 
-        // Project enemy world position to screen space.
         Vector3 screenPos = Camera.main.WorldToScreenPoint(_enemyTransform.position);
 
-        // Flip if behind camera.
         if (screenPos.z < 0)
         {
-            screenPos.x = Screen.width - screenPos.x;
+            screenPos.x = Screen.width  - screenPos.x;
             screenPos.y = Screen.height - screenPos.y;
         }
 
-        // Clamp to screen edges with padding.
-        float minX = indicatorEdgePadding;
-        float maxX = Screen.width  - indicatorEdgePadding;
-        float minY = indicatorEdgePadding;
-        float maxY = Screen.height - indicatorEdgePadding;
+        screenPos.x = Mathf.Clamp(screenPos.x, indicatorEdgePadding, Screen.width  - indicatorEdgePadding);
+        screenPos.y = Mathf.Clamp(screenPos.y, indicatorEdgePadding, Screen.height - indicatorEdgePadding);
 
-        screenPos.x = Mathf.Clamp(screenPos.x, minX, maxX);
-        screenPos.y = Mathf.Clamp(screenPos.y, minY, maxY);
+        Vector3 dir      = _enemyTransform.position - Camera.main.transform.position;
+        Vector2 screenDir = Camera.main.WorldToScreenPoint(Camera.main.transform.position + dir).normalized;
+        float angle      = Mathf.Atan2(screenDir.y, screenDir.x) * Mathf.Rad2Deg;
 
-        enemyIndicator.position = screenPos;
-
-        // Rotate indicator to point toward enemy.
-        Vector3 direction = _enemyTransform.position - Camera.main.transform.position;
-        Vector2 screenDir = Camera.main.WorldToScreenPoint(
-            Camera.main.transform.position + direction).normalized;
-        float angle = Mathf.Atan2(screenDir.y, screenDir.x) * Mathf.Rad2Deg;
-        enemyIndicator.rotation = Quaternion.Euler(0f, 0f, angle - 90f);
+        _hud.UpdateEnemyIndicator(screenPos, angle - 90f);
     }
 
+    // Fires on all clients to show the win screen with both post-game buttons.
     [ClientRpc]
     private void ShowWinnerClientRpc(ulong winnerClientId)
     {
+        if (_hud == null) _hud = FindFirstObjectByType<HUDController>();
+
         bool localWin = winnerClientId == NetworkManager.Singleton.LocalClientId;
-        string message = localWin ? "You Win!" : "You Lose!";
+        _hud.ShowWinOverlay(localWin ? "You Win!" : "You Lose!");
 
-        if (winOverlayText != null) winOverlayText.text = message;
-        if (winOverlay != null)     winOverlay.SetActive(true);
-
-        // Pause the game locally.
         Time.timeScale = 0f;
-
-        // Unlock cursor for menu interaction.
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible   = true;
     }
 
-    private void OnMatchOverChanged(bool prev, bool current) { }
+    // Resets all server-side match state for a new game.
+    public void ResetMatch()
+    {
+        if (!IsServer) return;
+        _p1Score.Value       = 0;
+        _p2Score.Value       = 0;
+        _isSuddenDeath.Value = false;
+        _isMatchOver.Value   = false;
+        _timeRemaining.Value = matchDuration;
+        _isActive            = false;
+        _enemyTransform      = null;
+    }
 }

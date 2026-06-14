@@ -12,31 +12,31 @@ public class PlayerController : NetworkBehaviour
     [SerializeField] private float groundedGravity = -2f;
     [SerializeField] private float dashDistance = 15f;
     [SerializeField] private float dashDuration = 0.15f;
-    [SerializeField] private float DashCooldown = 1f;
-    private Vector3 velocity;
-    private bool suppressGravity;
+    [SerializeField] private float dashCooldown = 1f;
 
     [Header("Stamina Costs")]
     [SerializeField] private int doubleJumpStaminaCost = 20;
     [SerializeField] private int sprintStaminaCost = 20;
     [SerializeField] private int dashStaminaCost = 20;
 
-    // Dash Variables
-    private bool isDashing;
-    private float dashTimer;
-    private float dashCooldownTimer;
-    private Vector3 dashDirection;
+    private CharacterController _cc;
+    private StaminaSystem _stamina;
+    private InputManager _input;
+    private CameraController _camera;
+    private SoundManager _sound;
+    private GrappleController _grapple;
 
-    // Component references
-    private CharacterController cc;
-    private StaminaSystem stamina;
-    private InputManager input;
+    private Vector3 _velocity;
+    private bool _hasDoubleJump;
+    private bool _isSprinting;
 
-    // Jump state
-    private bool hasDoubleJump;
+    private bool _isDashing;
+    private float _dashTimer;
+    private float _dashCooldownTimer;
+    private Vector3 _dashDirection;
 
-    // Sprint state
-    private bool isSprinting;
+    public bool IsDashing    => _isDashing;
+    public bool IsSprinting  => _isSprinting;
 
     public override void OnNetworkSpawn()
     {
@@ -45,153 +45,169 @@ public class PlayerController : NetworkBehaviour
             enabled = false;
             return;
         }
+    }
 
-        CameraController fpscam = Camera.main.GetComponent<CameraController>();
-        if (fpscam != null)
+    public void Activate()
+    {
+        if (!IsOwner) return;
+        enabled = true;
+        _camera = Camera.main.GetComponent<CameraController>();
+        if (_camera != null)
         {
-            fpscam.SetTarget(transform);
-            fpscam.Activate();
+            _camera.SetTarget(transform);
         }
     }
 
     private void Awake()
     {
-        cc = GetComponent<CharacterController>();
-        stamina = GetComponent<StaminaSystem>();
-        input = GetComponent<InputManager>();
+        _cc     = GetComponent<CharacterController>();
+        _stamina = GetComponent<StaminaSystem>();
+        _input  = GetComponent<InputManager>();
+        _sound  = SoundManager.Instance;
+        _grapple = GetComponent<GrappleController>();
     }
 
     private void Update()
     {
         if (!IsOwner) return;
 
-        if (cc.isGrounded) hasDoubleJump = true;
+        if (_cc.isGrounded) _hasDoubleJump = true;
+
         HandleMovement();
         HandleJump();
         HandleDash();
         ApplyGravity();
 
-        cc.Move(velocity * Time.deltaTime);
+        _cc.Move(_velocity * Time.deltaTime);
+
+        UpdateCameraEffects();
+        UpdateSound();
     }
 
+    // Builds move direction from camera orientation. Handles sprint and stamina drain.
     private void HandleMovement()
     {
-        if (isDashing) return;
+        if (_isDashing) return;
+        if (_grapple != null && _grapple.IsGrappling) return;
 
         float h = Input.GetAxis("Horizontal");
         float v = Input.GetAxis("Vertical");
 
-        // Build move direction relative to where the player is facing.
         Vector3 camForward = Vector3.Scale(Camera.main.transform.forward, new Vector3(1, 0, 1)).normalized;
         Vector3 camRight   = Camera.main.transform.right;
         Vector3 move       = camRight * h + camForward * v;
 
-        // Sprint: hold Left Shift, must have stamina, must be moving.
-        isSprinting = Input.GetKey(input.SprintKey) && move.magnitude > 0.1f && stamina.Current > 0;
+        _isSprinting = Input.GetKey(_input.SprintKey) && move.magnitude > 0.1f && _stamina.Current > 0;
 
-        float speed = walkSpeed * (isSprinting ? sprintMultiplier : 1f);
+        float speed = walkSpeed * (_isSprinting ? sprintMultiplier : 1f);
+        if (_isSprinting) _stamina.Drain(sprintStaminaCost * Time.deltaTime);
 
-        if (isSprinting) stamina.Drain(sprintStaminaCost * Time.deltaTime);
-        if (move.magnitude > 0.1f || cc.isGrounded)
+        if (move.magnitude > 0.1f || _cc.isGrounded)
         {
-            velocity.x = move.x * speed;
-            velocity.z = move.z * speed;
+            _velocity.x = move.x * speed;
+            _velocity.z = move.z * speed;
         }
     }
 
+    // Handles grounded jump and air double jump. Double jump costs stamina.
     private void HandleJump()
     {
-        if (!Input.GetKeyDown(input.JumpKey)) return;
+        if (_grapple != null && _grapple.IsGrappling) return;
+        if (!Input.GetKeyDown(_input.JumpKey)) return;
 
-        if (cc.isGrounded)
+        if (_cc.isGrounded)
         {
-            velocity.y = jumpForce;
-            hasDoubleJump = true;
+            _velocity.y = jumpForce;
+            _hasDoubleJump = true;
+            _sound?.PlayJump();
             return;
         }
 
-        // Double jump: available in air if not already used.
-        if (hasDoubleJump && stamina.Current >= doubleJumpStaminaCost)
+        if (_hasDoubleJump && _stamina.Current >= doubleJumpStaminaCost)
         {
-            velocity.y = jumpForce;
-            hasDoubleJump = false;
-            stamina.Drain(doubleJumpStaminaCost);
+            _velocity.y = jumpForce;
+            _hasDoubleJump = false;
+            _stamina.Drain(doubleJumpStaminaCost);
+            _sound?.PlayDoubleJump();
         }
     }
 
+    // Triggers a horizontal velocity burst in the current input direction. Works in air.
     private void HandleDash()
     {
-        // Tick down cooldown.
-        if (dashCooldownTimer > 0f)
-            dashCooldownTimer -= Time.deltaTime;
+        if (_dashCooldownTimer > 0f) _dashCooldownTimer -= Time.deltaTime;
 
-        if (isDashing)
+        if (_isDashing)
         {
-            dashTimer -= Time.deltaTime;
-
-            if (dashTimer <= 0f)
+            _dashTimer -= Time.deltaTime;
+            if (_dashTimer <= 0f)
             {
-                isDashing = false;
-                velocity.x = 0f;
-                velocity.z = 0f;
+                _isDashing  = false;
+                _velocity.x = 0f;
+                _velocity.z = 0f;
+                _camera?.SetFOVBoosted(false);
             }
             else
             {
-                // Override horizontal velocity with dash direction for the duration.
                 float speed = dashDistance / dashDuration;
-                velocity.x = dashDirection.x * speed;
-                velocity.z = dashDirection.z * speed;
+                _velocity.x = _dashDirection.x * speed;
+                _velocity.z = _dashDirection.z * speed;
             }
             return;
         }
 
-        if (!Input.GetKeyDown(input.DashKey)) return;
-        if (dashCooldownTimer > 0f) return;
-        if (stamina.Current < dashStaminaCost) return;
+        if (!Input.GetKeyDown(_input.DashKey)) return;
+        if (_dashCooldownTimer > 0f) return;
+        if (_stamina.Current < dashStaminaCost) return;
 
-        // Use current horizontal input as dash direction.
-        // Falls back to forward if no input is held.
         float h = Input.GetAxis("Horizontal");
         float v = Input.GetAxis("Vertical");
-        Vector3 inputDir = transform.right * h + transform.forward * v;
 
-        if (inputDir.magnitude < 0.1f)
-            inputDir = transform.forward;
+        Vector3 camForward = Vector3.Scale(Camera.main.transform.forward, new Vector3(1, 0, 1)).normalized;
+        Vector3 inputDir   = Camera.main.transform.right * h + camForward * v;
+        if (inputDir.magnitude < 0.1f) inputDir = camForward;
 
-        dashDirection = inputDir.normalized;
-        isDashing = true;
-        dashTimer = dashDuration;
-        dashCooldownTimer = DashCooldown;
-        stamina.Drain(dashStaminaCost);
+        _dashDirection     = inputDir.normalized;
+        _isDashing         = true;
+        _dashTimer         = dashDuration;
+        _dashCooldownTimer = dashCooldown;
+        _stamina.Drain(dashStaminaCost);
+
+        _camera?.SetFOVBoosted(true);
+        _sound?.PlayDash();
     }
 
-    public void SuppressGravity()
-    {
-        suppressGravity = true;
-    }
-    
+    // Accumulates gravity each frame. Skipped when GrappleController suppresses it.
     private void ApplyGravity()
     {
-        if (suppressGravity)
+        if (_grapple != null && _grapple.IsGrappling) return;
+        if (_isDashing) return;
+
+        if (_cc.isGrounded && _velocity.y < 0f)
         {
-            suppressGravity = false;
-            velocity.y = 0f;
+            _velocity.y = groundedGravity;
             return;
         }
-    
-        if (isDashing) return;
-    
-        if (cc.isGrounded && velocity.y < 0f)
-        {
-            velocity.y = groundedGravity;
-            return;
-        }
-    
-        velocity.y += gravity * Time.deltaTime;
+
+        _velocity.y += gravity * Time.deltaTime;
     }
 
-    public void AddVelocity(Vector3 velocity)
+    // Tells CameraController whether to bob. Bob is active only when grounded, moving, and not dashing.
+    private void UpdateCameraEffects()
     {
-        this.velocity += velocity;
+        if (_camera == null) return;
+        bool shouldBob = _cc.isGrounded && !_isDashing &&
+                         (_velocity.x != 0f || _velocity.z != 0f);
+        _camera.SetBobbing(shouldBob);
     }
+
+    // Passes movement state to SoundManager to control footstep loop.
+    private void UpdateSound()
+    {
+        if (_sound == null) return;
+        bool isMoving = _velocity.x != 0f || _velocity.z != 0f;
+        _sound.UpdateFootsteps(isMoving, _isSprinting, _cc.isGrounded);
+    }
+    public void SetVelocity(Vector3 velocity)    => _velocity = velocity;
+    public void AddVelocity(Vector3 velocity)    => _velocity += velocity;
 }

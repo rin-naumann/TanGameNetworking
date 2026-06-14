@@ -1,21 +1,27 @@
 using TMPro;
-using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class HUDController : NetworkBehaviour
+public class HUDController : MonoBehaviour
 {
-    [Header("Stamina")]
+    [Header("PlayerHUD Panel")]
+    [SerializeField] private GameObject playerHUD;
+
+    [Header("Stamina UI")]
     [SerializeField] private Slider staminaSlider;
 
-    [Header("Scores")]
+    [Header("Ammo UI")]
+    [SerializeField] private TMP_Text ammoText;
+    [SerializeField] private TMP_Text reloadingText;
+
+    [Header("Scores UI")]
     [SerializeField] private TMP_Text localScoreText;
     [SerializeField] private TMP_Text enemyScoreText;
 
-    [Header("Timer")]
+    [Header("Timer UI")]
     [SerializeField] private TMP_Text timerText;
 
-    [Header("Kill Feed")]
+    [Header("Kill Feed UI")]
     [SerializeField] private TMP_Text killFeedText;
 
     [Header("Crosshair")]
@@ -32,30 +38,51 @@ public class HUDController : NetworkBehaviour
     [Header("Enemy Indicator")]
     [SerializeField] private RectTransform enemyIndicator;
 
-    private StaminaSystem _stamina;
-    private CombatController _combat;
+    // Cached references to the local player's systems, assigned dynamically
+    private StaminaSystem _localStamina;
+    private CombatController _localCombat;
 
-    public override void OnNetworkSpawn()
+    private void Awake()
     {
-        if (!IsOwner)
+        // Auto-detect the HUD panel if it wasn't dragged into the inspector
+        if (playerHUD == null)
         {
-            enabled = false;
-            return;
-        }
-
-        // Find local player components.
-        foreach (var client in NetworkManager.Singleton.ConnectedClientsList)
-        {
-            if (client.ClientId != NetworkManager.Singleton.LocalClientId) continue;
-            if (client.PlayerObject == null) continue;
-
-            _stamina = client.PlayerObject.GetComponent<StaminaSystem>();
-            _combat  = client.PlayerObject.GetComponent<CombatController>();
-            break;
+            GameObject found = GameObject.FindGameObjectWithTag("HUD");
+            if (found != null) playerHUD = found;
+            else Debug.LogError("HUDController: Could not find GameObject with tag 'HUD'!");
         }
 
         InitializeCrosshair();
         InitializeHUD();
+        DeactivateHUD();
+    }
+
+    /// <summary>
+    /// Binds the local player's data streams directly to this UI instance.
+    /// Called by the local player's script upon Network Spawn.
+    /// </summary>
+    public void BindToLocalPlayer(StaminaSystem stamina, CombatController combat)
+    {
+        _localStamina = stamina;
+        _localCombat = combat;
+        ActivateHUD();
+    }
+
+    public void ActivateHUD()
+    {
+        if (playerHUD != null)
+        {
+            playerHUD.SetActive(true);
+        }
+        else
+        {
+            Debug.LogError("HUDController: playerHUD panel reference is missing!");
+        }
+    }
+
+    public void DeactivateHUD()
+    {
+        if (playerHUD != null) playerHUD.SetActive(false);
     }
 
     private void InitializeCrosshair()
@@ -67,10 +94,11 @@ public class HUDController : NetworkBehaviour
 
     private void InitializeHUD()
     {
-        if (killFeedText != null)    killFeedText.gameObject.SetActive(false);
-        if (winOverlay != null)      winOverlay.SetActive(false);
-        if (enemyIndicator != null)  enemyIndicator.gameObject.SetActive(false);
-        if (scopeOverlay != null)    scopeOverlay.SetActive(false);
+        if (killFeedText != null)   killFeedText.gameObject.SetActive(false);
+        if (winOverlay != null)     winOverlay.SetActive(false);
+        if (enemyIndicator != null) enemyIndicator.gameObject.SetActive(false);
+        if (scopeOverlay != null)   scopeOverlay.SetActive(false);
+        if (reloadingText != null)  reloadingText.gameObject.SetActive(false);
 
         if (staminaSlider != null)
         {
@@ -82,27 +110,34 @@ public class HUDController : NetworkBehaviour
 
     private void Update()
     {
-        if (!IsOwner) return;
+        // If no local player has bound to this HUD yet, don't execute visual updates
+        if (_localStamina == null || _localCombat == null) return;
 
-        UpdateStamina();
-        UpdateScopeOverlay();
+        UpdateStaminaUI();
+        UpdateScopeOverlayUI();
+        UpdateAmmoUI();
     }
 
-    private void UpdateStamina()
+    private void UpdateStaminaUI()
     {
-        if (staminaSlider == null || _stamina == null) return;
-        staminaSlider.value = _stamina.Current;
+        if (staminaSlider == null) return;
+        staminaSlider.value = _localStamina.Current;
     }
 
-    private void UpdateScopeOverlay()
+    private void UpdateScopeOverlayUI()
     {
-        if (scopeOverlay == null || _combat == null) return;
-        scopeOverlay.SetActive(_combat.IsScoped);
+        if (scopeOverlay == null) return;
+        scopeOverlay.SetActive(_localCombat.IsScoped);
     }
 
-    // -------------------------------------------------------------------------
-    // Called by GameStateManager
-    // -------------------------------------------------------------------------
+    private void UpdateAmmoUI()
+    {
+        if (ammoText != null)
+            ammoText.text = _localCombat.CurrentAmmo + " / " + _localCombat.MaxAmmo;
+        
+        if (reloadingText != null)
+            reloadingText.gameObject.SetActive(_localCombat.IsReloading);
+    }
 
     public void UpdateTimer(float timeRemaining)
     {
@@ -114,8 +149,8 @@ public class HUDController : NetworkBehaviour
 
     public void UpdateScores(int localScore, int enemyScore)
     {
-        if (localScoreText != null) localScoreText.text = "You: "    + localScore;
-        if (enemyScoreText != null) enemyScoreText.text = "Enemy: "  + enemyScore;
+        if (localScoreText != null) localScoreText.text = "You: "   + localScore;
+        if (enemyScoreText != null) enemyScoreText.text = "Enemy: " + enemyScore;
     }
 
     public void ShowKillFeed(string message)
@@ -134,6 +169,11 @@ public class HUDController : NetworkBehaviour
     {
         if (winOverlayText != null) winOverlayText.text = message;
         if (winOverlay != null)     winOverlay.SetActive(true);
+    }
+
+    public void HideWinOverlay()
+    {
+        if (winOverlay != null) winOverlay.SetActive(false);
     }
 
     public void ShowEnemyIndicator()

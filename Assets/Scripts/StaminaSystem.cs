@@ -1,16 +1,11 @@
-using TMPro;
 using Unity.Netcode;
 using UnityEngine;
-using UnityEngine.UI;
 
 public class StaminaSystem : NetworkBehaviour
 {
     [Header("Settings")]
     [SerializeField] private float maxStamina = 100f;
     [SerializeField] private float regenPerSecond = 1f;
-
-    [Header("Debug Display")]
-    [SerializeField] private Slider staminaSlider;
 
     private NetworkVariable<float> _stamina = new NetworkVariable<float>(
         100f,
@@ -19,7 +14,9 @@ public class StaminaSystem : NetworkBehaviour
     );
 
     public float Current => _stamina.Value;
+    public float Max     => maxStamina;
 
+    // Reduces stamina by amount. Only the owning client may write.
     public void Drain(float amount)
     {
         if (!IsOwner) return;
@@ -30,15 +27,7 @@ public class StaminaSystem : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // Regen
         if (_stamina.Value < maxStamina)
             _stamina.Value = Mathf.Min(maxStamina, _stamina.Value + regenPerSecond * Time.deltaTime);
-
-        // UI Slider Processing
-        if (staminaSlider != null)
-        {
-            staminaSlider.maxValue = maxStamina;
-            staminaSlider.value = _stamina.Value;
-        }
     }
 }

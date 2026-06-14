@@ -13,4 +13,7 @@ public class InputManager : NetworkBehaviour
     public KeyCode FireKey = KeyCode.Mouse0;
     public KeyCode ScopeKey = KeyCode.Mouse1;
     public KeyCode ReloadKey = KeyCode.R;
+
+    [Header("UI Keybinds")]
+    public KeyCode UnlockMouseKey = KeyCode.Escape;
 }
